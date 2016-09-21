@@ -15,6 +15,7 @@ import com.amazonaws.services.ec2.model.DeleteVolumeRequest
 import com.amazonaws.services.ec2.model.DescribeSecurityGroupsRequest
 import com.amazonaws.services.ec2.model.DescribeSnapshotsRequest
 import com.amazonaws.services.ec2.model.DescribeVolumesRequest
+import com.amazonaws.services.ec2.model.RevokeSecurityGroupIngressRequest
 import com.amazonaws.services.ec2.model.SecurityGroup
 import com.amazonaws.services.ec2.model.Snapshot
 import com.amazonaws.services.ec2.model.Volume
@@ -106,9 +107,11 @@ object Cleanup {
     res.getSecurityGroups.asScala.toList
   }
 
-  private def deleteSg(group: String): Boolean = {
+  private def deleteSg(group: SecurityGroup): Boolean = {
     try {
-      val req = new DeleteSecurityGroupRequest().withGroupId(group)
+      ec2Client.revokeSecurityGroupIngress(new RevokeSecurityGroupIngressRequest()
+        .withIpPermissions(group.getIpPermissions))
+      val req = new DeleteSecurityGroupRequest().withGroupId(group.getGroupId)
       val res = ec2Client.deleteSecurityGroup(req)
       println(s"delete $group: $res")
       true
@@ -120,7 +123,7 @@ object Cleanup {
     }
   }
 
-  private def deleteSgs(groups: List[String]): Unit = {
+  private def deleteSgs(groups: List[SecurityGroup]): Unit = {
     // HACK to work around dependency violations when deleting all groups. Should
     // rewrite this to figure out the tree and delete in the correct order...
     if (groups.nonEmpty) {
@@ -132,7 +135,6 @@ object Cleanup {
     ec2Client.setEndpoint(s"ec2.$region.amazonaws.com")
     val groups = describeSgs(new DescribeSecurityGroupsRequest)
       .filter(_.getGroupName != "default")
-      .map(_.getGroupId)
     deleteSgs(groups)
   }
 
