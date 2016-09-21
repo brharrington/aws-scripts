@@ -22,6 +22,12 @@ import com.amazonaws.services.elasticloadbalancing.AmazonElasticLoadBalancingCli
 import com.amazonaws.services.elasticloadbalancing.model.DeleteLoadBalancerRequest
 import com.amazonaws.services.elasticloadbalancing.model.DescribeLoadBalancersRequest
 import com.amazonaws.services.elasticloadbalancing.model.LoadBalancerDescription
+import com.amazonaws.services.elasticmapreduce.AmazonElasticMapReduceClient
+import com.amazonaws.services.elasticmapreduce.model.ClusterState
+import com.amazonaws.services.elasticmapreduce.model.ClusterSummary
+import com.amazonaws.services.elasticmapreduce.model.ListClustersRequest
+import com.amazonaws.services.elasticmapreduce.model.SetTerminationProtectionRequest
+import com.amazonaws.services.elasticmapreduce.model.TerminateJobFlowsRequest
 
 /**
   * Delete all of the ASGs, ELBs, and SGs for a given region.
@@ -35,6 +41,7 @@ object Cleanup {
   private val ec2Client = new AmazonEC2Client(creds)
   private val asgClient = new AmazonAutoScalingClient(creds)
   private val elbClient = new AmazonElasticLoadBalancingClient(creds)
+  private val emrClient = new AmazonElasticMapReduceClient(creds)
 
   private def describeAsgs(req: DescribeAutoScalingGroupsRequest): List[AutoScalingGroup] = {
     val res = asgClient.describeAutoScalingGroups(req)
@@ -107,6 +114,7 @@ object Cleanup {
       true
     } catch {
       case e: Exception =>
+        println(s"WARN: $group: ${e.getMessage}")
         //e.printStackTrace()
         false
     }
@@ -147,6 +155,33 @@ object Cleanup {
     }
   }
 
+  private def describeClusters(req: ListClustersRequest): List[ClusterSummary] = {
+    req.withClusterStates(
+      ClusterState.RUNNING,
+      ClusterState.BOOTSTRAPPING,
+      ClusterState.STARTING,
+      ClusterState.WAITING)
+    val res = emrClient.listClusters(req)
+    val values = res.getClusters.asScala.toList
+    if (res.getMarker == null)
+      values
+    else
+      values ::: describeClusters(req.withMarker(res.getMarker))
+  }
+
+  private def deleteClusters(region: String): Unit = {
+    emrClient.setEndpoint(s"elasticmapreduce.$region.amazonaws.com")
+    describeClusters(new ListClustersRequest).foreach { c =>
+      emrClient.setTerminationProtection(new SetTerminationProtectionRequest()
+        .withJobFlowIds(c.getId)
+        .withTerminationProtected(false))
+      val req = new TerminateJobFlowsRequest()
+        .withJobFlowIds(c.getId)
+      val res = emrClient.terminateJobFlows(req)
+      println(s"delete ${c.getId}: $res")
+    }
+  }
+
   private def describeSnapshots(req: DescribeSnapshotsRequest): List[Snapshot] = {
     val res = ec2Client.describeSnapshots(req)
     val values = res.getSnapshots.asScala.toList
@@ -170,12 +205,13 @@ object Cleanup {
     deleteAsgs(region)
     deleteLaunchConfigs(region)
     deleteElbs(region)
+    deleteClusters(region)
     deleteSgs(region)
     deleteVolumes(region)
     //deleteSnapshots(region)
   }
 
   def main(args: Array[String]): Unit = {
-    run("us-west-1")
+    run("eu-west-1")
   }
 }
