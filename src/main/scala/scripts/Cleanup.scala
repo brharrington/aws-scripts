@@ -109,8 +109,9 @@ object Cleanup {
 
   private def deleteSg(group: SecurityGroup): Boolean = {
     try {
-      ec2Client.revokeSecurityGroupIngress(new RevokeSecurityGroupIngressRequest()
-        .withIpPermissions(group.getIpPermissions))
+      //ec2Client.revokeSecurityGroupIngress(new RevokeSecurityGroupIngressRequest()
+      //  .withGroupId(group.getGroupId)
+      //  .withIpPermissions(group.getIpPermissions))
       val req = new DeleteSecurityGroupRequest().withGroupId(group.getGroupId)
       val res = ec2Client.deleteSecurityGroup(req)
       println(s"delete $group: $res")
@@ -204,7 +205,7 @@ object Cleanup {
   }
 
   def run(region: String): Unit = {
-    deleteAsgs(region)
+    //deleteAsgs(region)
     deleteLaunchConfigs(region)
     deleteElbs(region)
     deleteClusters(region)
@@ -214,6 +215,6 @@ object Cleanup {
   }
 
   def main(args: Array[String]): Unit = {
-    run("eu-west-1")
+    run("us-west-2")
   }
 }
